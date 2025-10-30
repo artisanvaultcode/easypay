@@ -1,0 +1,205 @@
+---
+# Network Policy to restrict database access
+# Only backend pods can access the database
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-network-policy
+  namespace: easypay
+  labels:
+    app: database
+    security: network-policy
+spec:
+  # Apply policy to database pods
+  podSelector:
+    matchLabels:
+      app: database
+  
+  # Define policy types
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Ingress rules - who can connect to database
+  ingress:
+  # Rule 1: Allow traffic from backend pods
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Rule 2: Allow traffic from monitoring/backup pods (optional)
+  - from:
+    - podSelector:
+        matchLabels:
+          role: monitoring
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Egress rules - where database can connect to
+  egress:
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  
+  # Allow outbound connections for updates/backups
+  - to:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+---
+# Network Policy for Backend - Allow connections from Frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: easypay
+  labels:
+    app: backend
+    security: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+  # Allow traffic from frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow traffic from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  egress:
+  # Allow connections to database
+  - to:
+    - podSelector:
+        matchLabels:
+          app: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  
+  # Allow HTTPS for external APIs
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+---
+# Network Policy for Frontend - Allow all inbound, restrict outbound
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: easypay
+  labels:
+    app: frontend
+    security: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+  # Allow all inbound traffic (from load balancer)
+  - {}
+  
+  egress:
+  # Allow connections to backend
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  
+  # Allow HTTPS for CDN/external resources
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+---
+# Default Deny All Policy (Optional - for enhanced security)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: easypay
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# Network Policy Test Pod Configuration
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-policy-test
+  namespace: easypay
+  labels:
+    app: test
+spec:
+  containers:
+  - name: network-test
+    image: nicolaka/netshoot
+    command:
+    - sleep
+    - "3600"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

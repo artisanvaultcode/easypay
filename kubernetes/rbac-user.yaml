@@ -1,0 +1,184 @@
+---
+# RBAC Configuration for EasyPay Developer User
+# This user can create, list, get, update, and delete pods
+
+# Step 1: Create a namespace for the user (optional)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: easypay
+
+---
+# Step 2: Create a Role with specific pod permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-manager
+  namespace: easypay
+  labels:
+    rbac: pod-management
+rules:
+# Pod permissions
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "list", "get", "update", "delete", "watch"]
+
+# Pod logs access
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list"]
+
+# Pod exec access (for debugging)
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+
+# Pod port-forward access
+- apiGroups: [""]
+  resources: ["pods/portforward"]
+  verbs: ["create"]
+
+---
+# Step 3: Create a ServiceAccount for the user
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: easypay-developer
+  namespace: easypay
+  labels:
+    role: developer
+
+---
+# Step 4: Create RoleBinding to bind the Role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-manager-binding
+  namespace: easypay
+  labels:
+    rbac: pod-management
+subjects:
+- kind: ServiceAccount
+  name: easypay-developer
+  namespace: easypay
+# Can also bind to User or Group
+- kind: User
+  name: developer@easypay.com
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: pod-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Step 5: Create a Secret for the ServiceAccount token (Kubernetes 1.24+)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: easypay-developer-token
+  namespace: easypay
+  annotations:
+    kubernetes.io/service-account.name: easypay-developer
+type: kubernetes.io/service-account-token
+
+---
+# Additional Role: Read-only access to other resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: resource-reader
+  namespace: easypay
+  labels:
+    rbac: read-only
+rules:
+# Read access to deployments
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+
+# Read access to services
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+
+# Read access to config maps and secrets
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+
+# Read access to events
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+
+---
+# Bind the read-only role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: resource-reader-binding
+  namespace: easypay
+subjects:
+- kind: ServiceAccount
+  name: easypay-developer
+  namespace: easypay
+- kind: User
+  name: developer@easypay.com
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: resource-reader
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for namespace-level operations (optional)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: namespace-viewer
+  labels:
+    rbac: namespace-access
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding for namespace viewer
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: easypay-namespace-viewer
+subjects:
+- kind: ServiceAccount
+  name: easypay-developer
+  namespace: easypay
+roleRef:
+  kind: ClusterRole
+  name: namespace-viewer
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Test Pod to verify RBAC permissions
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rbac-test-pod
+  namespace: easypay
+  labels:
+    app: rbac-test
+spec:
+  serviceAccountName: easypay-developer
+  containers:
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - sleep
+    - "3600"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

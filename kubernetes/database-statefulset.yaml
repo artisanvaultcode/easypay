@@ -1,0 +1,203 @@
+---
+# Database StatefulSet for EasyPay Application
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: easypay-database
+  namespace: easypay
+  labels:
+    app: database
+    tier: data
+    environment: production
+spec:
+  serviceName: easypay-database
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+        tier: data
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-name
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_INITDB_ARGS
+          value: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: database-init
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: gp3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: easypay-database
+  namespace: easypay
+  labels:
+    app: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: database
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: database-init
+  namespace: easypay
+data:
+  01-init.sql: |
+    -- Create tables for EasyPay application
+    
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS wallets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        balance DECIMAL(15, 2) DEFAULT 0.00,
+        currency VARCHAR(3) DEFAULT 'USD',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT positive_balance CHECK (balance >= 0)
+    );
+    
+    CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(15, 2) NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        payment_method VARCHAR(50),
+        transaction_id VARCHAR(100) UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT positive_amount CHECK (amount > 0)
+    );
+    
+    CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        wallet_id INTEGER REFERENCES wallets(id) ON DELETE CASCADE,
+        transaction_type VARCHAR(20) NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        balance_before DECIMAL(15, 2),
+        balance_after DECIMAL(15, 2),
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create indexes for better performance
+    CREATE INDEX idx_wallets_user_id ON wallets(user_id);
+    CREATE INDEX idx_payments_user_id ON payments(user_id);
+    CREATE INDEX idx_payments_status ON payments(status);
+    CREATE INDEX idx_payments_created_at ON payments(created_at);
+    CREATE INDEX idx_transactions_wallet_id ON transactions(wallet_id);
+    CREATE INDEX idx_transactions_created_at ON transactions(created_at);
+    
+    -- Insert sample data
+    INSERT INTO users (username, email) VALUES
+        ('john_doe', 'john@example.com'),
+        ('jane_smith', 'jane@example.com'),
+        ('bob_wilson', 'bob@example.com')
+    ON CONFLICT (username) DO NOTHING;
+    
+    INSERT INTO wallets (user_id, balance) VALUES
+        (1, 1000.00),
+        (2, 2500.00),
+        (3, 500.00)
+    ON CONFLICT DO NOTHING;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: easypay-database-read
+  namespace: easypay
+  labels:
+    app: database
+    service-type: read
+spec:
+  type: ClusterIP
+  selector:
+    app: database
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    protocol: TCP

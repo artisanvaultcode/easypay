@@ -1,0 +1,247 @@
+---
+# Backend Deployment for EasyPay Application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: easypay-backend
+  namespace: easypay
+  labels:
+    app: backend
+    tier: application
+    environment: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend
+        tier: application
+    spec:
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z easypay-database 5432; do
+            echo "Waiting for database..."
+            sleep 5
+          done
+          echo "Database is ready!"
+      containers:
+      - name: backend
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          pip install flask psycopg2-binary gunicorn
+          gunicorn --bind 0.0.0.0:8080 --workers 4 app:app
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: DB_HOST
+          value: "easypay-database"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-name
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: database-password
+        - name: FLASK_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+      volumes:
+      - name: app-code
+        configMap:
+          name: backend-app
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - backend
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: easypay-backend
+  namespace: easypay
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  sessionAffinity: None
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database-secret
+  namespace: easypay
+type: Opaque
+stringData:
+  database-name: "easypay_db"
+  database-user: "easypay_user"
+  database-password: "SecurePassword123!"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-app
+  namespace: easypay
+data:
+  app.py: |
+    from flask import Flask, jsonify, request
+    import psycopg2
+    import os
+    import time
+    
+    app = Flask(__name__)
+    
+    def get_db_connection():
+        max_retries = 5
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                conn = psycopg2.connect(
+                    host=os.environ.get('DB_HOST'),
+                    port=os.environ.get('DB_PORT'),
+                    database=os.environ.get('DB_NAME'),
+                    user=os.environ.get('DB_USER'),
+                    password=os.environ.get('DB_PASSWORD'),
+                    connect_timeout=10
+                )
+                return conn
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise e
+    
+    @app.route('/health')
+    def health():
+        return jsonify({'status': 'healthy'}), 200
+    
+    @app.route('/ready')
+    def ready():
+        try:
+            conn = get_db_connection()
+            conn.close()
+            return jsonify({'status': 'ready', 'database': 'connected'}), 200
+        except Exception as e:
+            return jsonify({'status': 'not ready', 'error': str(e)}), 503
+    
+    @app.route('/api/payment', methods=['POST'])
+    def process_payment():
+        try:
+            data = request.get_json()
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Simulate payment processing
+            cur.execute("""
+                INSERT INTO payments (user_id, amount, status, created_at)
+                VALUES (%s, %s, %s, NOW())
+                RETURNING id
+            """, (data.get('user_id'), data.get('amount'), 'SUCCESS'))
+            
+            payment_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            conn.close()
+            
+            return jsonify({
+                'payment_id': payment_id,
+                'status': 'SUCCESS',
+                'message': 'Payment processed successfully'
+            }), 200
+        except Exception as e:
+            return jsonify({
+                'status': 'FAILED',
+                'error': str(e)
+            }), 500
+    
+    @app.route('/api/balance/<user_id>')
+    def get_balance(user_id):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            cur.execute("SELECT balance FROM wallets WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            
+            cur.close()
+            conn.close()
+            
+            if result:
+                return jsonify({'user_id': user_id, 'balance': float(result[0])}), 200
+            else:
+                return jsonify({'error': 'User not found'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=8080)
