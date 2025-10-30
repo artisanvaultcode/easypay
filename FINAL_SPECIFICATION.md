@@ -12,8 +12,6 @@
 | **Project Name** | EasyPay High-Availability DevOps Infrastructure |
 | **Project Code** | EASYPAY-HA-2025 |
 | **Version** | 1.0.0 |
-| **Start Date** | October 2025 |
-| **Completion Date** | October 2025 |
 | **Status** | ✅ Completed |
 | **Environment** | Production |
 
@@ -384,9 +382,7 @@ Comprehensive testing was performed across 10 categories with 32 test cases cove
 ## 7. GitHub Repository
 
 ### 7.1 Repository Information
-**Repository URL:** `https://github.com/yourusername/easypay-ha-infrastructure`
-
-**Note:** Replace `yourusername` with your actual GitHub username
+**Repository URL:** `https://github.com/artisanvaultcode/easypay.git`
 
 ### 7.2 Repository Structure
 ```
@@ -431,7 +427,7 @@ git add .
 git commit -m "Initial commit: EasyPay HA Infrastructure"
 
 # Add remote repository
-git remote add origin https://github.com/yourusername/easypay-ha-infrastructure.git
+git remote add origin https://github.com/artisanvaultcode/easypay.git
 
 # Push to GitHub
 git push -u origin main
@@ -443,7 +439,8 @@ To verify project completion through the GitHub repository:
 
 1. **Clone Repository:**
    ```bash
-   git clone https://github.com/yourusername/easypay-ha-infrastructure.git
+   git clone https://github.com/artisanvaultcode/easypay.git
+
    cd easypay-ha-infrastructure
    ```
 

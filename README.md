@@ -147,7 +147,7 @@ easypay-ha-infrastructure/
 
 ### Step 1: Clone Repository
 ```bash
-git clone https://github.com/yourusername/easypay-ha-infrastructure.git
+git clone https://github.com/artisanvaultcode/easypay.git
 cd easypay-ha-infrastructure
 ```
 
@@ -211,7 +211,7 @@ kubectl apply -f .
 - Enhanced developer productivity with CI/CD pipeline
 
 ## GitHub Repository
-**Repository Link:** https://github.com/yourusername/easypay-ha-infrastructure
+**Repository Link:** https://github.com/artisanvaultcode/easypay.git
 
 ## License
 PRIVATE

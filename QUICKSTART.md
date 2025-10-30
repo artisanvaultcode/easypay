@@ -13,7 +13,7 @@
 
 ## Step 1: Clone Repository
 ```bash
-git clone https://github.com/yourusername/easypay-ha-infrastructure.git
+git clone https://github.com/artisanvaultcode/easypay.git
 cd easypay-ha-infrastructure
 ```
 
@@ -65,7 +65,7 @@ kubectl get nodes
 On master node:
 ```bash
 # Clone repository on master
-git clone https://github.com/yourusername/easypay-ha-infrastructure.git
+git clone https://github.com/artisanvaultcode/easypay.git
 cd easypay-ha-infrastructure
 
 # Run deployment script
@@ -302,5 +302,4 @@ Your high-availability EasyPay infrastructure is now running! 🎉
 ---
 
 **Version:** 1.0  
-**Last Updated:** October 29, 2025  
 **Maintained By:** DevOps Team

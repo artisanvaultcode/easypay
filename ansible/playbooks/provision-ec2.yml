@@ -1,6 +1,5 @@
 ---
 # Ansible Playbook: Provision EC2 Instances for Kubernetes Cluster
-# File: ansible/playbooks/provision-ec2.yml
 
 - name: Provision and Configure EC2 Instances
   hosts: cluster
